@@ -1,0 +1,388 @@
+---
+title: "Project_1"
+author: "Brian Higginbotham & Rocco Matarazzo"
+urlcolor: blue
+output:  
+  html_document:
+    toc_depth: 1
+    theme: readable
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, error = FALSE)
+```
+# Project 1 Index {.tabset .tabset-pills}
+## Data
+
+The data files used in this project are from the Census Bureau:  
+
+   * <https://www4.stat.ncsu.edu/~online/datasets/EDU01a.csv>  
+   * <https://www4.stat.ncsu.edu/~online/datasets/EDU01b.csv>  
+   * <https://www4.stat.ncsu.edu/~online/datasets/PST01a.csv>  
+   * <https://www4.stat.ncsu.edu/~online/datasets/PST01b.csv>  
+   * <https://www4.stat.ncsu.edu/~online/datasets/PST01c.csv>  
+   * <https://www4.stat.ncsu.edu/~online/datasets/PST01d.csv>  
+
+
+Read in appropriate packages:
+```{r packages, results=FALSE}
+library(tidyverse)
+library(readr)
+```
+
+## Data Processing {.tabset .tabset-pills}
+### First Steps
+
+Read in first data sheet (EDU01a)
+```{r read_csva}
+library(readr)
+sheet1 <- read_csv("https://www4.stat.ncsu.edu/~online/datasets/EDU01a.csv")
+```
+<br>
+Select columns (Area_name as area_name, STCOU, any column ending in "D")
+```{r column_select}
+sheet1 <- sheet1 %>% 
+  select(Area_name, STCOU, ends_with("D")) %>%
+  rename("area_name" = Area_name)
+# Run attributes() to check column selection
+attributes(sheet1)$names
+```
+<br>
+Convert to long format
+```{r long_format}
+sheet1 <- sheet1 %>%
+  pivot_longer(cols=3:12, names_to="edu_code", values_to = "enrollment")
+# run str() to check pivot 
+str(sheet1)
+```
+<br>
+Parse the new column "edu" to pull out the year and convert to YYYY format
+Grab the first 7 characters of the new column "edu"
+```{r parse_year_and_edit_length}
+# In the first step we drop the "D" from the "edu" column and then split the resulting column into two new columns - "edu" overwritten to now contain the first three characters and four digits of the old "edu" column, and "yr" which contains the last two digits of the year for the enrollment value
+sheet1 <- sheet1 %>%
+  mutate(edu_code=substr(sheet1$edu_code, 1, 9)) %>%
+  separate(edu_code, into=c("edu_code", "yr"), sep=7, remove = TRUE, convert = FALSE)
+# In the second step, we evaluate if the new column "yr" is greater than 50. If so, we paste0 "19" to it's value and force the value to be read as numeric; if the column value is less than 50, we paste "20" to the value and force the value to be read as numeric. 
+sheet1 <- sheet1 %>%
+  mutate(yr = if_else(sheet1$yr > 50, as.numeric(paste0("19", sheet1$yr, sep="")), as.numeric(paste0("20", sheet1$yr, sep=""))))
+# print random rows to check code parsing
+sheet1[4433:4438, ]
+```
+<br>
+Create two data sets:  
+
+   * `county` containing only the county-level rows  
+   * `state` containing the non-county level rows  
+
+Add appropriate `class` to each
+```{r create_two_df}
+county_df <- sheet1[grep(pattern = ", \\w\\w", sheet1$area_name), ]
+class(county_df) <- c("county", class(county_df))
+state_df <- sheet1[-c(grep(patter = ", \\w\\w", sheet1$area_name)), ]
+class(state_df) <- c("state", class(state_df))
+# print random rows to check output
+county_df[1:4, ]
+# print random rows to check output
+state_df[60:64, ]
+```
+<br>
+Add column containing state information for the county-level tibble
+```{r add_ST_column}
+county_df <- county_df %>%
+  mutate("state" = substr(county_df$area_name, nchar(county_df$area_name)-1, nchar(county_df$area_name)))
+# select a few random counties on a single year to check that "state" column matches county
+filter(county_df, yr == 1990 & STCOU %in% c("40001", "10001", "20001", "30001", "25001"))
+```
+<br>
+Add column to non-county tibble corresponding to the state's classification of division
+```{r add_regional_division}
+# created a vector for each regional division containing the names of the states within the division
+new_england <- c("CONNECTICUT", "MAINE", "MASSACHUSETTS", "NEW HAMPSHIRE", "RHODE ISLAND", "VERMONT")
+mid_atlantic <- c("NEW JERSEY", "NEW YORK", "PENNSYLVANIA")
+east_north_central <- c("ILLINOIS", "INDIANA", "MICHIGAN", "OHIO", "WISCONSIN")
+west_north_central <- c("IOWA", "KANSAS", "MINNESOTA", "MISSOURI", "NEBRASKA", "NORTH DAKOTA", "SOUTH DAKOTA")
+# included District of Columbia in the South Atlantic Division since both Maryland and Virginia are in this division
+south_atlantic <- c("DELAWARE", "FLORIDA", "GEORGIA", "MARYLAND", "NORTH CAROLINA", "SOUTH CAROLINA", "VIRGINIA", "DISTRICT OF COLUMBIA", "WEST VIRGINIA", "DISTRICT OF COLUMBIA")
+east_south_central <- c("ALABAMA", "KENTUCKY", "MISSISSIPPI", "TENNESSEE")
+west_south_central <- c("ARKANSAS", "LOUISIANA", "OKLAHOMA", "TEXAS")
+mountain <- c("ARIZONA", "COLORADO", "IDAHO", "MONTANA", "NEVADA", "NEW MEXICO", "UTAH", "WYOMING")
+pacific <- c("ALASKA", "CALIFORNIA", "HAWAII", "OREGON", "WASHINGTON")
+# created division column using if/else logic
+state_df <- state_df %>%
+  mutate("division" = if_else(area_name %in% new_england, "New England", 
+          if_else(area_name %in% mid_atlantic, "Mid Atlantic", 
+          if_else(area_name %in% east_north_central, "East North Central", 
+          if_else(area_name %in% west_north_central, "West North Central", 
+          if_else(area_name %in% south_atlantic, "South Atlantic", 
+          if_else(area_name %in% east_south_central, "East South Central", 
+          if_else(area_name %in% west_south_central, "West South Central", 
+          if_else(area_name %in% mountain, "Mountain", 
+          if_else(area_name %in% pacific, "Pacific", "ERROR"))))))))))
+# select a few random states filtered on a single year to prevent duplication to check that division matches state
+filter(state_df, yr == 1990 & area_name %in% c("ARIZONA", "CALIFORNIA", "OHIO", "MARYLAND", "MAINE"))
+```
+### Write Functions
+
+Read in second data sheet (EDU01b)
+```{r read_csvb}
+sheet2 <- read_csv("https://www4.stat.ncsu.edu/~online/datasets/EDU01b.csv")
+```
+<br>
+Write a function to select/rename columns and pivot to long format
+```{r function_1}
+# included option argument to name column with enrollment data
+select_and_pivot <- function(sheet, var_name = "population") {
+  df <- sheet %>%
+            select(Area_name, STCOU, ends_with("D")) %>%
+            rename("area_name" = Area_name) %>%
+            pivot_longer(cols=3:12, names_to="census_code", values_to = var_name)
+  return(df)
+}
+census <- select_and_pivot(sheet2, var_name = "enroll")
+# run str() to check structure of pivoted data
+str(census)
+```
+<br>
+Write a function that takes the output from `select_and_pivot()` and creates a *year* column and a census description column (*edu_code*)
+```{r function_2}
+create_code_yr <- function(sheet) {
+  dfa <- sheet %>% 
+           mutate(census_code=substr(sheet$census_code, 1, 9)) %>%
+           separate(census_code, into=c("census_code", "yr"), sep=7, remove = TRUE, convert = FALSE)
+  dfb <- dfa %>%
+           mutate(yr = if_else(dfa$yr > 50, as.numeric(paste0("19", dfa$yr, sep="")), as.numeric(paste0("20", dfa$yr, sep=""))))
+  return(dfb)
+}
+census <- create_code_yr(census)
+# check str() to see structure of augmented tibble
+str(census)
+```
+<br>
+Write a function that will add a state information column (*state*) to the county-level tibble
+```{r function_3}
+create_state <- function(sheet) {
+  df <- sheet %>%
+    mutate("state" = substr(sheet$area_name, nchar(sheet$area_name)-1, nchar(sheet$area_name)))
+  return(df)
+}
+```
+Write a function that will add a division classification column (*division*) to the non-county tibble
+```{r function_4}
+create_division <- function(sheet) {
+  df <- sheet %>%
+    mutate("division" = if_else(area_name %in% new_england, "New England", 
+            if_else(area_name %in% mid_atlantic, "Mid Atlantic", 
+            if_else(area_name %in% east_north_central, "East North Central", 
+            if_else(area_name %in% west_north_central, "West North Central", 
+            if_else(area_name %in% south_atlantic, "South Atlantic", 
+            if_else(area_name %in% east_south_central, "East South Central", 
+            if_else(area_name %in% west_south_central, "West South Central", 
+            if_else(area_name %in% mountain, "Mountain", 
+            if_else(area_name %in% pacific, "Pacific", "ERROR"))))))))))
+  return(df)
+}
+```
+<br>
+Write a function that takes the output from `create_code_yr()` and creates two tibbes - one for county rows and another for non-county rows. Add *state* column to county tibble and add *division classification* to non-county tibble. **Return one object with two tibbles**
+```{r function_5}
+split_county_state <- function(sheet) {
+  county <- sheet[grep(pattern = ", \\w\\w", sheet$area_name), ]
+  class(county) <- c("county", class(county))
+  county <- create_state(county)
+  state <- sheet[-c(grep(patter = ", \\w\\w", sheet$area_name)), ]
+  state <- state %>%
+    filter(area_name != "District of Columbia")
+  class(state) <- c("state", class(state))
+  state <- create_division(state)
+# return a list with two tibbles. Labeled each item in the list to access each tibble later with $ query syntax
+  return(list(county = county, state = state))
+}
+census <- split_county_state(census)
+# print random rows filtered by year to check county and state tibbles
+# filtered by year to reduce the redundancy of area_name
+# for spot-checking purposes only
+filter(census$county, yr == 1999 & STCOU %in% c("13001", "24001", "33001", "39001", "42001"))
+filter(census$state[225:275, ], yr == 2002)
+```
+<br>
+Write a `wrapper function` that will take in a URL address to one CSV file and return two tibbles in a single object
+```{r wrapper_function}
+process_data <- function(url, var_name = "population") {
+  a <- read_csv(url)
+  b <- select_and_pivot(a, var_name)
+  c <- create_code_yr(b)
+  d <- split_county_state(c)
+  return(d)
+}
+```
+### Call It & Combine
+
+Call the wrapper function twice, once for each census file (EDU01a & EDU01b)
+```{r call_wrapper}
+edu_01a <- process_data("https://www4.stat.ncsu.edu/~online/datasets/EDU01a.csv", var_name = "pop")
+
+edu_01b <- process_data("https://www4.stat.ncsu.edu/~online/datasets/EDU01b.csv", var_name = "pop")
+
+```
+<br>
+Write a function to combine the county and non-county tibbles of the above outputs
+```{r combine_function}
+combine_data <- function(data_1, data_2) {
+  a <- bind_rows(data_1$county, data_2$county)
+  b <- bind_rows(data_1$state, data_2$state)
+# Labeled each item in the list to access each tibble later with $ query syntax
+  return(list(county = a,state = b))
+}
+```
+<br>
+Call combine function
+```{r call_combine}
+edu_01 <- combine_data(edu_01a, edu_01b)
+# print random rows filtered by year to check county and state tibbles
+# filtered by year to reduce the redundancy of area_name
+# used one year each csv file to ensure data combined
+# for spot-checking purposes only
+filter(edu_01$county, ((yr == 2001) | (yr == 1991)) & STCOU %in% c("08013", "18011", "22033", "36005", "48009"))
+filter(edu_01$state, (yr == 2001) | (yr == 1991))
+```
+## Summarizing
+
+`state` plotting method:
+```{r state_plot}
+# calculates the mean of the var_name (population) by regional division and year
+# filters out all rows were division == "ERROR"
+plot.state <- function(df, var_name = "population") {
+  new_df <- df %>%
+    group_by(division, yr) %>% 
+    summarise(ENRmean = mean(get(var_name))) %>%
+    filter(division != "ERROR")
+  
+# plots a line graph of the mean var_name (population) by year for each regional division
+  ggplot(new_df, aes(x = yr, y = ENRmean, color = division)) + 
+    geom_line() + scale_y_continuous(labels = scales::comma) + ylab(var_name)
+}
+```
+<br>
+`county` plotting method
+```{r county_plot}
+# order defaults to "top", so if order argument is left blank or if "top" is entered, the function will return dataframe in descending order. If "bottom" is entered for the argument, the dataframe will return in ascending order. If anything other than "top" or "bottom" is entered, the function will STOP and request user to enter appropriate argument
+plot.county <- function(df, var_name = "population", st = "IL", order = "top", n = 5) {
+  if(order == "top"){
+  new_df <- df %>%
+    filter(state == st) %>%
+    group_by(area_name) %>%
+    summarise(ENRmean = mean(get(var_name))) %>%
+    arrange(desc(ENRmean))
+  }
+  else if(order == "bottom"){
+    new_df <- df %>%
+      filter(state == st) %>%
+      group_by(area_name) %>%
+      summarise(ENRmean = mean(get(var_name))) %>%
+      arrange(ENRmean)
+  }
+  else{
+    stop("Specify Order (top or bottom)")
+  }
+# the above function returns the highest or lowest means of var_name (population) grouped by county for the state entered in the argument.
+# the below function filters the original input dataframe based on the area_names of the above results, so that the new dataframe (filter_df) contains non-aggregated data for the counties identified in the above results
+  new_df <- new_df[1:n, ]
+  filter_df <- df %>%
+    filter(area_name %in% new_df$area_name)
+  
+# plots a line graph of the var_name (population) for each year for the top or bottom 'n' counties for the state entered in the function argument  
+  ggplot(filter_df, aes(x = yr, y = get(var_name), color = area_name)) +
+    geom_line() + scale_y_continuous(labels = scales::comma) + ylab(var_name)
+}
+```
+## Put It Together {.tabset .tabset-pills}
+### EDU URLs
+
+Run the data processing function on the two EDU URLs
+```{r process_edu}
+edu_01a <- process_data("https://www4.stat.ncsu.edu/~online/datasets/EDU01a.csv", var_name = "pop")
+edu_01b <- process_data("https://www4.stat.ncsu.edu/~online/datasets/EDU01b.csv", var_name = "pop")
+```
+<br>
+Combine function
+```{r combine_edu}
+edu_01 <- combine_data(edu_01a, edu_01b)
+```
+<br>
+Plot `state` dataframe
+```{r plot_state}
+plot(edu_01$state, var_name = "pop")
+```
+<br>
+Plot `county` dataframe - North Carolina 
+```{r plot_NC}
+plot(edu_01$county, "pop", "NC", "top", 10)
+```
+<br>
+Plot `county` dataframe - Arizona
+```{r plot_AZ}
+plot(edu_01$county, "pop", "AZ", "bottom", 6)
+```
+<br>
+Plot `county` dataframe - defaults
+```{r plot_default}
+# Have to specify var_name since the plotting default ("population") would not match data source ("pop")
+plot(edu_01$county, "pop")
+```
+<br>
+Plot `county` dataframe - Ohio
+```{r plot_OH}
+plot(edu_01$county, "pop", "OH", "top", 8)
+```
+
+### PST URLs
+
+Run the data processing function on the four PST URLs
+```{r process_pst}
+pst_01a <- process_data("https://www4.stat.ncsu.edu/~online/datasets/PST01a.csv")
+pst_01b <- process_data("https://www4.stat.ncsu.edu/~online/datasets/PST01b.csv")
+pst_01c <- process_data("https://www4.stat.ncsu.edu/~online/datasets/PST01c.csv")
+pst_01d <- process_data("https://www4.stat.ncsu.edu/~online/datasets/PST01a.csv")
+```
+<br>
+Combine function
+```{r combine_pst}
+pst_01 <- combine_data(pst_01a, pst_01b)
+pst_01 <- combine_data(pst_01c, pst_01)
+pst_01 <- combine_data(pst_01d, pst_01)
+```
+<br>
+Plot `state` dataframe
+```{r plot_pst_state}
+plot(pst_01$state)
+```
+<br>
+Plot `county` dataframe - Pennsylvania
+```{r plot_PA}
+# used ',,' as a place holder for empty arguments
+# this allows the function to utilize default values
+plot(pst_01$county,,"PA",, 5)
+```
+<br>
+Plot `county` dataframe - Texas
+```{r plot_TX}
+# used ',,' as a place holder for empty arguments
+# this allows the function to utilize default values
+plot(pst_01$county,,"TX","bottom", 12)
+```
+<br>
+Plot `county` dataframe - default
+```{r plot_pst_default}
+plot(pst_01$county)
+```
+<br>
+Plot `county` dataframe - New York
+```{r plot_NY}
+# used ',,' as a place holder for empty arguments
+# this allows the function to utilize default values
+plot(pst_01$county,,"NY",, 6)
+```
+<br>
+The above graph indicates a data error for the year 1992. At first glance, it would appear that the populations of all NYC boroughs were reported in the single borough of Kings, NY.
