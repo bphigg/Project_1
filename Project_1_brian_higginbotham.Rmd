@@ -1,6 +1,6 @@
 ---
-title: "Project_1"
-author: "Brian Higginbotham & Rocco Matarazzo"
+title: "Data Processing, Summarization, and Visualization"
+author: "Brian Higginbotham"
 urlcolor: blue
 output:  
   html_document:
@@ -12,10 +12,12 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, error = FALSE)
 ```
-# Project 1 Index {.tabset .tabset-pills}
+# Project Overview {.tabset .tabset-pills}
+This project is focused on data processing with the end goal of producing meaningful summaries and graphics. We will use data files from the U.S. Census Bureau on school enrollment populations and general overall populations. One of the main objectives is to create generalized functions that can process and transform data for easy summation and graphic presentation. Our focus on the Census information will be to graph enrollment and population data.
+
 ## Data
 
-The data files used in this project are from the Census Bureau:  
+The data files used in this project are from the Census Bureau. `EDU` files contain school enrollment data and `PST` files contain population data:  
 
    * <https://www4.stat.ncsu.edu/~online/datasets/EDU01a.csv>  
    * <https://www4.stat.ncsu.edu/~online/datasets/EDU01b.csv>  
@@ -24,8 +26,7 @@ The data files used in this project are from the Census Bureau:
    * <https://www4.stat.ncsu.edu/~online/datasets/PST01c.csv>  
    * <https://www4.stat.ncsu.edu/~online/datasets/PST01d.csv>  
 
-
-Read in appropriate packages:
+The following packages were used:
 ```{r packages, results=FALSE}
 library(tidyverse)
 library(readr)
@@ -34,13 +35,14 @@ library(readr)
 ## Data Processing {.tabset .tabset-pills}
 ### First Steps
 
-Read in first data sheet (EDU01a)
+First, let's read in a single data sheet. We'll start with the `EDU` data, so our data points of interest are going to be enrollment (EDU01a)
 ```{r read_csva}
 library(readr)
 sheet1 <- read_csv("https://www4.stat.ncsu.edu/~online/datasets/EDU01a.csv")
+head(sheet1)
 ```
 <br>
-Select columns (Area_name as area_name, STCOU, any column ending in "D")
+Inspecting the head of the data file, we see that there are 42 columns. Our points of interest, enrollment, are all the columns that end in "D". So now we will reduce the size of our data file by selecting only the columns that correspond to enrollment as well as `Area_name` and `STCOU`. These last two columns will be needed to create the visualizations.
 ```{r column_select}
 sheet1 <- sheet1 %>% 
   select(Area_name, STCOU, ends_with("D")) %>%
@@ -49,7 +51,7 @@ sheet1 <- sheet1 %>%
 attributes(sheet1)$names
 ```
 <br>
-Convert to long format
+A quick glance at a data file shows that our main point of interest, enrollment or population, is in a wide format - that is the population data is spread about between multiple columns. In order to run any kind of analysis on the enrollment numbers we'll need to convert the enrollment data to long format - that is, move all the enrollment data into one column.
 ```{r long_format}
 sheet1 <- sheet1 %>%
   pivot_longer(cols=3:12, names_to="edu_code", values_to = "enrollment")
@@ -57,10 +59,10 @@ sheet1 <- sheet1 %>%
 str(sheet1)
 ```
 <br>
-Parse the new column "edu" to pull out the year and convert to YYYY format
-Grab the first 7 characters of the new column "edu"
+Parse the new column "edu_code" to pull out the year and convert to YYYY format
+Grab the first 7 characters of the new column "edu_code"
 ```{r parse_year_and_edit_length}
-# In the first step we drop the "D" from the "edu" column and then split the resulting column into two new columns - "edu" overwritten to now contain the first three characters and four digits of the old "edu" column, and "yr" which contains the last two digits of the year for the enrollment value
+# In the first step we drop the "D" from the "edu" column and then split the resulting column into two new columns - "edu_code" overwritten to now contain the first three characters and four digits of the old "edu_code" column, and "yr" which contains the last two digits of the year for the enrollment value
 sheet1 <- sheet1 %>%
   mutate(edu_code=substr(sheet1$edu_code, 1, 9)) %>%
   separate(edu_code, into=c("edu_code", "yr"), sep=7, remove = TRUE, convert = FALSE)
@@ -71,7 +73,7 @@ sheet1 <- sheet1 %>%
 sheet1[4433:4438, ]
 ```
 <br>
-Create two data sets:  
+Now we split the data file into two separate data files:
 
    * `county` containing only the county-level rows  
    * `state` containing the non-county level rows  
@@ -80,7 +82,7 @@ Add appropriate `class` to each
 ```{r create_two_df}
 county_df <- sheet1[grep(pattern = ", \\w\\w", sheet1$area_name), ]
 class(county_df) <- c("county", class(county_df))
-state_df <- sheet1[-c(grep(patter = ", \\w\\w", sheet1$area_name)), ]
+state_df <- sheet1[-c(grep(pattern = ", \\w\\w", sheet1$area_name)), ]
 class(state_df) <- c("state", class(state_df))
 # print random rows to check output
 county_df[1:4, ]
@@ -124,6 +126,8 @@ state_df <- state_df %>%
 filter(state_df, yr == 1990 & area_name %in% c("ARIZONA", "CALIFORNIA", "OHIO", "MARYLAND", "MAINE"))
 ```
 ### Write Functions
+
+Now that we've processed the data into a form that we can use for summaries, we'll now want to combine all the transformations into a few functions that will be able to call in the data and process it to the desired structure.
 
 Read in second data sheet (EDU01b)
 ```{r read_csvb}
@@ -191,7 +195,7 @@ split_county_state <- function(sheet) {
   county <- sheet[grep(pattern = ", \\w\\w", sheet$area_name), ]
   class(county) <- c("county", class(county))
   county <- create_state(county)
-  state <- sheet[-c(grep(patter = ", \\w\\w", sheet$area_name)), ]
+  state <- sheet[-c(grep(pattern = ", \\w\\w", sheet$area_name)), ]
   state <- state %>%
     filter(area_name != "District of Columbia")
   class(state) <- c("state", class(state))
@@ -207,7 +211,7 @@ filter(census$county, yr == 1999 & STCOU %in% c("13001", "24001", "33001", "3900
 filter(census$state[225:275, ], yr == 2002)
 ```
 <br>
-Write a `wrapper function` that will take in a URL address to one CSV file and return two tibbles in a single object
+Lastly, we'll create a `wrapper function` that will take in a URL address to one CSV file and return two tibbles in a single object
 ```{r wrapper_function}
 process_data <- function(url, var_name = "population") {
   a <- read_csv(url)
@@ -248,6 +252,8 @@ filter(edu_01$county, ((yr == 2001) | (yr == 1991)) & STCOU %in% c("08013", "180
 filter(edu_01$state, (yr == 2001) | (yr == 1991))
 ```
 ## Summarizing
+
+Here, we'll create the plotting functions for both the state and county data frames. Note that the county data frame includes dynamic arguments that allow the user to select `state`, order (top or bottom), and the total number of counties to be included.
 
 `state` plotting method:
 ```{r state_plot}
@@ -298,6 +304,9 @@ plot.county <- function(df, var_name = "population", st = "IL", order = "top", n
 }
 ```
 ## Put It Together {.tabset .tabset-pills}
+
+Here we combine all of the functions, wrapper functions, and plotting functions to read in, process, transform, and plot the education/population data. First, we'll run the functions on the EDU data. Second, we'll run the functions on population data.
+
 ### EDU URLs
 
 Run the data processing function on the two EDU URLs
