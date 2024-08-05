@@ -1,9 +1,10 @@
 ########################
 #### Part 1 ###########
 ######################
-
+library(tidyverse)
 library(readr)
 sheet1 <- read_csv("https://www4.stat.ncsu.edu/~online/datasets/EDU01a.csv")
+head(sheet1)
 sheet1 <- sheet1 %>% 
   select(Area_name, STCOU, ends_with("D")) %>%
   rename("area_name" = Area_name)
@@ -15,7 +16,7 @@ sheet1 <- sheet1 %>%
 sheet1 <- sheet1 %>%
   mutate(yr = if_else(sheet1$yr > 50, as.numeric(paste0("19", sheet1$yr, sep="")), as.numeric(paste0("20", sheet1$yr, sep=""))))
 county_df <- sheet1[grep(pattern = ", \\w\\w", sheet1$area_name), ]
-state_df <- sheet1[-c(grep(patter = ", \\w\\w", sheet1$area_name)), ]
+state_df <- sheet1[-c(grep(pattern = ", \\w\\w", sheet1$area_name)), ]
 class(county_df) <- c("county", class(county_df))
 class(state_df) <- c("state", class(state_df))
 county_df <- county_df %>%
